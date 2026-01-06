@@ -31,17 +31,24 @@ from tqdm import tqdm
 from utils import safe_list_index
 from utils import side_to_directed_lineseg
 
-try:
-    from av2.geometry.interpolate import compute_midpoint_line
-    from av2.map.map_api import ArgoverseStaticMap
-    from av2.map.map_primitives import Polyline
-    from av2.utils.io import read_json_file
-except ImportError:
-    compute_midpoint_line = object
-    ArgoverseStaticMap = object
-    Polyline = object
-    read_json_file = object
+# try:
+#     from av2.geometry.interpolate import compute_midpoint_line
+#     from av2.map.map_api import ArgoverseStaticMap
+#     from av2.map.map_primitives import Polyline
+#     from av2.utils.io import read_json_file
+# except ImportError:
+#     compute_midpoint_line = object
+#     ArgoverseStaticMap = object
+#     Polyline = object
+#     read_json_file = object
 
+from av2.geometry.interpolate import compute_midpoint_line
+from av2.map.map_api import ArgoverseStaticMap
+from av2.map.map_primitives import Polyline
+from av2.utils.io import read_json_file
+
+import glob
+import os
 
 class ArgoverseV2Dataset(Dataset):
     """Dataset class for Argoverse 2 Motion Forecasting Dataset.
@@ -99,12 +106,22 @@ class ArgoverseV2Dataset(Dataset):
         else:
             raw_dir = os.path.expanduser(os.path.normpath(raw_dir))
             self._raw_dir = raw_dir
+            # if os.path.isdir(self._raw_dir):
+            #     self._raw_file_names = [name for name in os.listdir(self._raw_dir) if
+            #                             os.path.isdir(os.path.join(self._raw_dir, name))]
+            # else:
+            #     self._raw_file_names = []
             if os.path.isdir(self._raw_dir):
-                self._raw_file_names = [name for name in os.listdir(self._raw_dir) if
-                                        os.path.isdir(os.path.join(self._raw_dir, name))]
+                self._raw_file_names = []
+                for name in os.listdir(self._raw_dir):
+                    dir_path = os.path.join(self._raw_dir, name)
+                    if os.path.isdir(dir_path):
+                        parquet_path = os.path.join(dir_path, f'scenario_{name}.parquet') # 检查场景文件
+                        map_files = glob.glob(os.path.join(dir_path, 'log_map_archive_*.json')) # 检查地图文件
+                        if os.path.exists(parquet_path) and len(map_files) > 0:
+                            self._raw_file_names.append(name)
             else:
                 self._raw_file_names = []
-
         if processed_dir is None:
             processed_dir = os.path.join(root, split, 'processed')
             self._processed_dir = processed_dir
@@ -131,11 +148,14 @@ class ArgoverseV2Dataset(Dataset):
         self.predict_unseen_agents = predict_unseen_agents
         self.vector_repr = vector_repr
         self._url = f'https://s3.amazonaws.com/argoverse/datasets/av2/tars/motion-forecasting/{split}.tar'
-        self._num_samples = {
-            'train': 199908,
-            'val': 24988,
-            'test': 24984,
-        }[split]
+        if len(self._raw_file_names) > 0:
+            self._num_samples = len(self._raw_file_names)
+        else:
+            self._num_samples = {
+                'train': 199908,
+                'val': 24988,
+                'test': 24984,
+            }[split]
         self._agent_types = ['vehicle', 'pedestrian', 'motorcyclist', 'cyclist', 'bus', 'static', 'background',
                              'construction', 'riderless_bicycle', 'unknown']
         self._agent_categories = ['TRACK_FRAGMENT', 'UNSCORED_TRACK', 'SCORED_TRACK', 'FOCAL_TRACK']
